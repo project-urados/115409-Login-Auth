@@ -1,0 +1,56 @@
+body {
+  font: 16px/1.5 system-ui, sans-serif;
+  max-width: 760px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  color: #17202a;
+}
+
+nav {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+nav form { margin-left: auto; }
+main { max-width: 520px; }
+
+label {
+  display: block;
+  margin: 1rem 0 .25rem;
+  font-weight: 600;
+}
+
+input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: .65rem;
+  border: 1px solid #9aa4ad;
+  border-radius: 5px;
+  font: inherit;
+}
+
+button {
+  margin-top: 1rem;
+  padding: .65rem 1rem;
+  border: 0;
+  border-radius: 5px;
+  background: #174ea6;
+  color: white;
+  font: inherit;
+  cursor: pointer;
+}
+
+.notice {
+  padding: .75rem;
+  background: #eef4ff;
+  border-left: 4px solid #174ea6;
+  margin: 1rem 0;
+}
+
+.muted { color: #53606b; font-size: .92rem; }
+.honeypot { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+section { padding: 1rem 0; border-bottom: 1px solid #ddd; }
