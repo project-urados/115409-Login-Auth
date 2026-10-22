@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Connected services</h1>
+    <p class="muted">Services must ask before they can connect. Nothing is connected until you accept.</p>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Pending requests {% if pending %}<span class="badge badge-warn">{{ pending|length }}</span>{% endif %}</h2>
+  {% for req in pending %}
+    <div class="item">
+      <div>
+        <h3>{{ req.name }}</h3>
+        <p class="muted">Requested {{ req.created_at | timestamp }}</p>
+        {% if req.message %}<p>&ldquo;{{ req.message }}&rdquo;</p>{% endif %}
+        <ul class="scope-list">
+          {% for scope in req.scopes.split() %}<li>{{ descriptions.get(scope, scope) }}</li>{% endfor %}
+        </ul>
+      </div>
+      <div class="row-actions">
+        <form method="post" action="{{ url_for('connections.decide_request', public_id=req.public_id, decision='accept') }}">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="btn-approve">Accept</button>
+        </form>
+        <form method="post" action="{{ url_for('connections.decide_request', public_id=req.public_id, decision='decline') }}">
+          <input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit" class="btn-ghost">Decline</button>
+        </form>
+      </div>
+    </div>
+  {% else %}
+    <p class="empty">No pending requests.</p>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>Active connections</h2>
+  {% for conn in active %}
+    <div class="item">
+      <div>
+        <h3>{{ conn.name }} <span class="badge badge-ok">Connected</span></h3>
+        <p class="muted">Connected since {{ conn.created_at | timestamp }} · {{ conn.items }} stored item(s), {{ conn.bytes_used }} bytes</p>
+        <ul class="scope-list">
+          {% for scope in conn.scopes.split() %}<li>{{ descriptions.get(scope, scope) }}</li>{% endfor %}
+        </ul>
+      </div>
+      <form method="post" action="{{ url_for('connections.revoke_connection', public_id=conn.public_id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button type="submit" class="btn-danger">Remove and delete data</button>
+      </form>
+    </div>
+  {% else %}
+    <p class="empty">No connected services.</p>
+  {% endfor %}
+</div>
+{% endblock %}

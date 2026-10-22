@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>Save your recovery codes</h1>
+  <p>Each code works once if you lose access to your authenticator app. They will not be shown again. Store them somewhere safe.</p>
+  <div class="codes">{% for code in codes %}<div>{{ code }}</div>{% endfor %}</div>
+  <p><a class="btn" href="{{ url_for('mfa.security') }}">I have saved them</a></p>
+</div>
+{% endblock %}

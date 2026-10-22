@@ -3,25 +3,70 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ title }} · Local Auth Demo</title>
+  <title>{{ title }} · {{ footer.brand }}</title>
+  <link rel="icon" href="{{ url_for('static', filename='img/favicon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-  <nav>
-    <a href="{{ url_for('home') }}">Home</a>
-    {% if user %}<a href="{{ url_for('account') }}">Account</a>{% else %}
-      <a href="{{ url_for('login') }}">Sign in</a><a href="{{ url_for('register') }}">Create account</a>
-    {% endif %}
-    {% if user %}
-      <form method="post" action="{{ url_for('logout') }}">
-        <input type="hidden" name="csrf" value="{{ csrf }}">
-        <button type="submit">Sign out</button>
-      </form>
-    {% endif %}
-  </nav>
-  {% with messages = get_flashed_messages() %}
-    {% if messages %}<div class="notice">{% for message in messages %}<div>{{ message }}</div>{% endfor %}</div>{% endif %}
-  {% endwith %}
-  <main>{% block content %}{% endblock %}</main>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container bar">
+      <a class="brand" href="{{ url_for('home') }}">
+        <span class="brand-mark" aria-hidden="true">LA</span>
+        <span>{{ footer.brand }}</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        {% if user %}
+          <a href="{{ url_for('account') }}">Account</a>
+          <a href="{{ url_for('connections.connections_page') }}">Connected services</a>
+          <a href="{{ url_for('mfa.security') }}">Security</a>
+          <form method="post" action="{{ url_for('logout') }}" class="inline">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button type="submit" class="btn btn-ghost">Sign out</button>
+          </form>
+        {% else %}
+          <a href="{{ url_for('login') }}">Sign in</a>
+          <a href="{{ url_for('register') }}" class="btn btn-primary btn-small">Create account</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="container">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="alerts" role="status">
+          {% for message in messages %}<div class="alert">{{ message }}</div>{% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  {% if footer.enabled %}
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div class="footer-brand">
+        <div class="brand"><span class="brand-mark" aria-hidden="true">LA</span><span>{{ footer.brand }}</span></div>
+        {% if footer.tagline %}<p class="muted">{{ footer.tagline }}</p>{% endif %}
+      </div>
+      {% for column in footer.columns %}
+        {% if column.links %}
+        <nav class="footer-col" aria-label="{{ column.title }}">
+          <h2>{{ column.title }}</h2>
+          <ul>
+            {% for link in column.links %}
+              <li><a href="{{ link.href }}">{{ link.label }}</a></li>
+            {% endfor %}
+          </ul>
+        </nav>
+        {% endif %}
+      {% endfor %}
+    </div>
+    <div class="container footer-base">
+      <span>&copy; {% if footer.show_year %}{{ footer_year }} {% endif %}{{ footer.copyright }}</span>
+    </div>
+  </footer>
+  {% endif %}
 </body>
 </html>

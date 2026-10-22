@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card card-narrow">
+  <h1>Allow {{ client.name }} to connect?</h1>
+  <p class="muted"><strong>{{ client.name }}</strong> is asking to connect to your account. You can remove this connection at any time, and removing it deletes the data it stored.</p>
+  <h2 class="mt">It will be able to</h2>
+  <ul class="scope-list scope-list-lg">
+    {% for scope in requested %}
+      <li>{{ descriptions.get(scope, scope) }}{% if scope in new_scopes %} <span class="badge badge-warn">new</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  <div class="row-actions mt-lg">
+    <form method="post" action="{{ url_for('oauth.authorize') }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      {% for key, value in params.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+      <button type="submit" name="decision" value="approve" class="btn-approve">Allow</button>
+    </form>
+    <form method="post" action="{{ url_for('oauth.authorize') }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      {% for key, value in params.items() %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+      <button type="submit" name="decision" value="deny" class="btn-ghost">Deny</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

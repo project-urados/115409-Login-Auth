@@ -1,17 +1,24 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Create account</h1>
-<p class="muted">Accounts are stored only in the local SQLite database. There is no email or password reset service.</p>
-{% if error %}<div class="notice">{{ error }}</div>{% endif %}
-<form method="post">
-  <input type="hidden" name="csrf" value="{{ csrf }}">
-  <div class="honeypot" aria-hidden="true"><label>Leave this field empty<input name="website" tabindex="-1" autocomplete="off"></label></div>
-  <label for="username">Username</label><input id="username" name="username" minlength="3" maxlength="32" required autocomplete="username">
-  <label for="display_name">Display name</label><input id="display_name" name="display_name" maxlength="60" required autocomplete="nickname">
-  <label for="password">Password (at least 12 characters)</label><input id="password" name="password" type="password" minlength="12" maxlength="128" required autocomplete="new-password">
-  <label for="confirm">Confirm password</label><input id="confirm" name="confirm" type="password" minlength="12" maxlength="128" required autocomplete="new-password">
-  <input type="hidden" name="challenge_id" value="{{ challenge.challenge_id }}">
-  <label for="challenge_answer">Local bot check: {{ challenge.question }}</label><input id="challenge_answer" name="challenge_answer" inputmode="numeric" required autocomplete="off">
-  <button type="submit">Create account</button>
-</form>
+<div class="card card-narrow">
+  <h1>Create account</h1>
+  <p class="muted">Your account is stored in this site's database. Turn on two-step verification after you sign in.</p>
+  {% if error %}<div class="notice error" role="alert">{{ error }}</div>{% endif %}
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="honeypot" aria-hidden="true"><label>Leave this field empty<input name="website" tabindex="-1" autocomplete="off"></label></div>
+    <label for="username">Username</label>
+    <input id="username" name="username" minlength="3" maxlength="32" required autocomplete="username">
+    <label for="display_name">Display name</label>
+    <input id="display_name" name="display_name" maxlength="60" required autocomplete="nickname">
+    <label for="password">Password (at least 12 characters)</label>
+    <input id="password" name="password" type="password" minlength="12" maxlength="128" required autocomplete="new-password">
+    <label for="confirm">Confirm password</label>
+    <input id="confirm" name="confirm" type="password" minlength="12" maxlength="128" required autocomplete="new-password">
+    <input type="hidden" name="challenge_id" value="{{ challenge.challenge_id }}">
+    <label for="challenge_answer">Local bot check: {{ challenge.question }}</label>
+    <input id="challenge_answer" name="challenge_answer" inputmode="numeric" required autocomplete="off">
+    <button type="submit" class="btn-block">Create account</button>
+  </form>
+</div>
 {% endblock %}

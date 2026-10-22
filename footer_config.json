@@ -1,0 +1,39 @@
+{
+  "enabled": true,
+  "brand": "Local Auth",
+  "tagline": "Secure accounts, sign-in, and connected services.",
+  "columns": [
+    {
+      "title": "Product",
+      "links": [
+        {
+          "label": "Home",
+          "href": "/"
+        },
+        {
+          "label": "Connected services",
+          "href": "/account/connections"
+        },
+        {
+          "label": "Security",
+          "href": "/account/security"
+        }
+      ]
+    },
+    {
+      "title": "Developers",
+      "links": [
+        {
+          "label": "OpenID discovery",
+          "href": "/.well-known/openid-configuration"
+        },
+        {
+          "label": "JWKS",
+          "href": "/.well-known/jwks.json"
+        }
+      ]
+    }
+  ],
+  "copyright": "Local Auth",
+  "show_year": true
+}

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Security</h1>
+    <p class="muted">Two-step verification adds a time-based code to your password.</p>
+  </div>
+  <span class="badge {{ 'badge-ok' if mfa_enabled else 'badge-warn' }}">{{ 'On' if mfa_enabled else 'Off' }}</span>
+</div>
+
+{% if not mfa_enabled and not enrolling %}
+<div class="card">
+  <h2>Turn on two-step verification</h2>
+  <p>You will need an authenticator app such as Google Authenticator, 1Password, Aegis, or Microsoft Authenticator.</p>
+  <form method="post" action="{{ url_for('mfa.mfa_start') }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="honeypot" aria-hidden="true"><label>Leave this field empty<input name="website" tabindex="-1" autocomplete="off"></label></div>
+    <input type="hidden" name="challenge_id" value="{{ challenge.challenge_id }}">
+    <label for="challenge_answer">Local bot check: {{ challenge.question }}</label>
+    <input id="challenge_answer" name="challenge_answer" inputmode="numeric" required autocomplete="off">
+    <button type="submit">Set up two-step verification</button>
+  </form>
+</div>
+{% elif enrolling %}
+<div class="card">
+  <h2>Finish setup</h2>
+  <p>Scan the QR code with your authenticator app, or enter the key manually. Then type the 6-digit code it shows.</p>
+  <div class="setup-grid">
+    {% if qr %}<div class="qr" aria-label="QR code for your authenticator app">{{ qr|safe }}</div>{% endif %}
+    <div>
+      <p class="muted">Manual key</p>
+      <p><code class="secret">{{ setup_secret }}</code></p>
+      <form method="post" action="{{ url_for('mfa.mfa_confirm') }}">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="honeypot" aria-hidden="true"><label>Leave this field empty<input name="website" tabindex="-1" autocomplete="off"></label></div>
+        <label for="code">6-digit code</label>
+        <input id="code" name="code" class="code-input" inputmode="numeric" maxlength="6" required autocomplete="one-time-code">
+        <input type="hidden" name="challenge_id" value="{{ challenge.challenge_id }}">
+        <label for="challenge_answer">Local bot check: {{ challenge.question }}</label>
+        <input id="challenge_answer" name="challenge_answer" inputmode="numeric" required autocomplete="off">
+        <button type="submit">Confirm and turn on</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <h2>Turn off two-step verification</h2>
+  <p class="muted">Enter your password to turn this off. Recovery codes will be deleted.</p>
+  <form method="post" action="{{ url_for('mfa.mfa_disable') }}">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <div class="honeypot" aria-hidden="true"><label>Leave this field empty<input name="website" tabindex="-1" autocomplete="off"></label></div>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" required autocomplete="current-password">
+    <input type="hidden" name="challenge_id" value="{{ challenge.challenge_id }}">
+    <label for="challenge_answer">Local bot check: {{ challenge.question }}</label>
+    <input id="challenge_answer" name="challenge_answer" inputmode="numeric" required autocomplete="off">
+    <button type="submit" class="btn-danger">Turn off two-step verification</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Recent account activity</h2>
+  {% if audit_rows %}
+  <table class="table">
+    <thead><tr><th>When</th><th>Event</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for row in audit_rows %}
+      <tr><td>{{ row.created_at | timestamp }}</td><td><code>{{ row.event }}</code></td><td>{{ row.detail }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="empty">No activity yet.</p>{% endif %}
+</div>
+{% endblock %}

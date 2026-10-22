@@ -1,11 +1,27 @@
 {% extends "base.html" %}
 {% block content %}
-  {% if user %}
-    <h1>Welcome, {{ user.display_name }}</h1>
-    <p>You are signed in. <a href="{{ url_for('account') }}">Manage your account</a>.</p>
-  {% else %}
-    <h1>Local authentication demo</h1>
-    <p>This small Flask app stores accounts in a SQLite database on this machine.</p>
-    <p><a href="{{ url_for('login') }}">Sign in</a> or <a href="{{ url_for('register') }}">create an account</a>.</p>
-  {% endif %}
+{% if user %}
+  <section class="hero">
+    <h1>Welcome back, {{ user.display_name }}</h1>
+    <p>Manage your sign-in security, review the services connected to your account, and control what they can store.</p>
+    <div class="row-actions">
+      <a class="btn" href="{{ url_for('account') }}">Account settings</a>
+      <a class="btn btn-ghost" href="{{ url_for('connections.connections_page') }}">Connected services</a>
+    </div>
+  </section>
+{% else %}
+  <section class="hero">
+    <h1>One account. Secure sign-in. Full control.</h1>
+    <p>Sign in with a password plus a second factor, and decide exactly which services can connect to your account and what data they may keep.</p>
+    <div class="row-actions">
+      <a class="btn" href="{{ url_for('register') }}">Create account</a>
+      <a class="btn btn-ghost" href="{{ url_for('login') }}">Sign in</a>
+    </div>
+  </section>
+  <section class="grid">
+    <div class="card feature"><h3>Two-step verification</h3><p>Time-based one-time codes (TOTP) with single-use recovery codes.</p></div>
+    <div class="card feature"><h3>OpenID Connect and OAuth 2.0</h3><p>Standard authorization code flow with PKCE and RS256-signed JWTs.</p></div>
+    <div class="card feature"><h3>You approve every connection</h3><p>Services must ask. Nothing is connected until you accept the request.</p></div>
+  </section>
+{% endif %}
 {% endblock %}

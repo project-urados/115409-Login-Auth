@@ -1,14 +1,29 @@
-import hashlib
-import hmac
 import os
-import re
-import secrets
 import sqlite3
 import time
-from pathlib import Path
 
-from flask import Flask, abort, flash, redirect, render_template, request, session, url_for
+from flask import Flask, flash, jsonify, redirect, request, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
+
+import connections
+import mfa
+import oauth
+from core import (
+    USERNAME_RE,
+    audit,
+    bot_check,
+    check_csrf,
+    current_user,
+    db_conn,
+    enforce_rate_limit,
+    ensure_csrf,
+    init_db,
+    new_challenge,
+    render_page,
+    require_user,
+    safe_next,
+)
+from footer import init_footer
 
 app = Flask(__name__)
 secret_key = os.environ.get("FLASK_SECRET_KEY")
@@ -23,176 +38,25 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=os.environ.get("HTTPS_ONLY", "0") == "1",
     PERMANENT_SESSION_LIFETIME=60 * 60 * 8,
-    MAX_CONTENT_LENGTH=16 * 1024,
+    MAX_CONTENT_LENGTH=2 * 1024 * 1024,
+    OIDC_ISSUER=os.environ.get("OIDC_ISSUER", ""),
 )
 
-DB_PATH = Path(os.environ.get("AUTH_DB", "auth.sqlite3")).expanduser().resolve()
-DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-USERNAME_RE = re.compile(r"^[A-Za-z0-9_.-]{3,32}$")
-
-
-def connect_db():
-    db = sqlite3.connect(DB_PATH, timeout=10)
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA busy_timeout = 10000")
-    db.execute("PRAGMA foreign_keys = ON")
-    return db
-
-
-def init_db():
-    with connect_db() as db:
-        db.execute("PRAGMA journal_mode = WAL")
-        db.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT NOT NULL COLLATE NOCASE UNIQUE,
-                display_name TEXT NOT NULL,
-                password_hash TEXT NOT NULL,
-                created_at INTEGER NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS rate_limits (
-                bucket TEXT NOT NULL,
-                client_hash TEXT NOT NULL,
-                window_start INTEGER NOT NULL,
-                hits INTEGER NOT NULL,
-                PRIMARY KEY (bucket, client_hash)
-            );
-            CREATE TABLE IF NOT EXISTS challenges (
-                id TEXT PRIMARY KEY,
-                answer_hash TEXT NOT NULL,
-                expires_at INTEGER NOT NULL
-            );
-            """
-        )
-
-
 init_db()
+init_footer(app)
+with app.app_context():
+    # Create the signing key at startup so the JWKS is populated before the first token.
+    oauth.load_or_create_signing_key()
 
 
-def render_page(template, title, **context):
-    ensure_csrf()
-    return render_template(
-        template,
-        title=title,
-        user=current_user(),
-        csrf=session.get("csrf", ""),
-        **context,
-    )
-
-
-def current_user():
-    user_id = session.get("user_id")
-    if not user_id:
-        return None
-    with connect_db() as db:
-        return db.execute(
-            "SELECT id, username, display_name, created_at FROM users WHERE id = ?", (user_id,)
-        ).fetchone()
-
-
-def ensure_csrf():
-    if "csrf" not in session:
-        session["csrf"] = secrets.token_urlsafe(32)
-    return session["csrf"]
-
-
-def check_csrf():
-    supplied = request.form.get("csrf", "")
-    expected = session.get("csrf", "")
-    if not expected or not hmac.compare_digest(supplied, expected):
-        abort(400, "The form expired or was invalid. Please reload and try again.")
-
-
-def ip_fingerprint():
-    # Do not trust X-Forwarded-For unless a trusted proxy is explicitly configured.
-    address = request.remote_addr or "unknown"
-    return hmac.new(app.secret_key.encode(), address.encode(), hashlib.sha256).hexdigest()
-
-
-def rate_limit(bucket, limit, seconds):
-    """SQLite fixed-window limiter; returns seconds to wait, or zero."""
-    now = int(time.time())
-    window_start = now - (now % seconds)
-    client_hash = ip_fingerprint()
-    with connect_db() as db:
-        db.execute("BEGIN IMMEDIATE")
-        row = db.execute(
-            "SELECT window_start, hits FROM rate_limits WHERE bucket = ? AND client_hash = ?",
-            (bucket, client_hash),
-        ).fetchone()
-        if row is None or row["window_start"] != window_start:
-            db.execute(
-                "INSERT INTO rate_limits(bucket, client_hash, window_start, hits) VALUES (?, ?, ?, 1) "
-                "ON CONFLICT(bucket, client_hash) DO UPDATE SET window_start=excluded.window_start, hits=1",
-                (bucket, client_hash, window_start),
-            )
-            wait = 0
-        elif row["hits"] >= limit:
-            wait = seconds - (now - window_start)
-        else:
-            db.execute(
-                "UPDATE rate_limits SET hits = hits + 1 WHERE bucket = ? AND client_hash = ?",
-                (bucket, client_hash),
-            )
-            wait = 0
-        db.execute("DELETE FROM rate_limits WHERE window_start < ?", (now - 2 * 24 * 60 * 60,))
-        db.commit()
-    return wait
-
-
-def enforce_rate_limit(bucket, limit, seconds):
-    wait = rate_limit(bucket, limit, seconds)
-    if wait:
-        abort(429, f"Too many requests. Try again in about {wait} seconds.")
-
-
-def new_challenge():
-    first, second = secrets.randbelow(8) + 2, secrets.randbelow(8) + 2
-    challenge_id = secrets.token_urlsafe(24)
-    answer = str(first + second)
-    answer_hash = hmac.new(
-        app.secret_key.encode(), f"{challenge_id}:{answer}".encode(), hashlib.sha256
-    ).hexdigest()
-    now = int(time.time())
-    with connect_db() as db:
-        db.execute("DELETE FROM challenges WHERE expires_at < ?", (now,))
-        db.execute(
-            "INSERT INTO challenges(id, answer_hash, expires_at) VALUES (?, ?, ?)",
-            (challenge_id, answer_hash, now + 10 * 60),
-        )
-    return {"challenge_id": challenge_id, "question": f"What is {first} + {second}?"}
-
-
-def verify_challenge():
-    challenge_id = request.form.get("challenge_id", "")
-    answer = request.form.get("challenge_answer", "").strip()
-    if not challenge_id or len(challenge_id) > 100 or len(answer) > 20:
-        return False
-    now = int(time.time())
-    with connect_db() as db:
-        db.execute("BEGIN IMMEDIATE")
-        row = db.execute(
-            "SELECT answer_hash, expires_at FROM challenges WHERE id = ?", (challenge_id,)
-        ).fetchone()
-        db.execute("DELETE FROM challenges WHERE id = ?", (challenge_id,))
-        db.commit()
-    if row is None or row["expires_at"] < now:
-        return False
-    submitted_hash = hmac.new(
-        app.secret_key.encode(), f"{challenge_id}:{answer}".encode(), hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(submitted_hash, row["answer_hash"])
-
-
-def bot_check():
-    return not request.form.get("website", "").strip() and verify_challenge()
-
-
-def get_user_id(username):
-    with connect_db() as db:
-        row = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
-        return row["id"] if row else None
+@app.template_filter("timestamp")
+def format_timestamp(value):
+    if not value:
+        return "never"
+    return time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime(int(value)))
+app.register_blueprint(mfa.bp)
+app.register_blueprint(oauth.bp)
+app.register_blueprint(connections.bp)
 
 
 @app.before_request
@@ -205,17 +69,26 @@ def security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "same-origin"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; style-src 'self'; form-action 'self'; "
-        "frame-ancestors 'none'; base-uri 'self'"
+    # Stored service data may carry any content type; endpoints that return it set their own CSP.
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; style-src 'self'; img-src 'self' data:; form-action 'self' https:; "
+        "frame-ancestors 'none'; base-uri 'self'",
     )
-    response.headers["Cache-Control"] = "no-store"
+    if not request.path.startswith(("/.well-known/", "/static/")) and "Cache-Control" not in response.headers:
+        response.headers["Cache-Control"] = "no-store"
+    if os.environ.get("HTTPS_ONLY", "0") == "1":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
 
 @app.errorhandler(400)
+@app.errorhandler(403)
+@app.errorhandler(404)
 @app.errorhandler(429)
 def handle_client_error(error):
+    if request.path.startswith(("/api/", "/oauth/", "/.well-known/")):
+        return jsonify(error="request_failed", error_description=error.description), error.code
     return render_page("error.html", "Request error", message=error.description), error.code
 
 
@@ -246,16 +119,20 @@ def register():
             error = "The passwords did not match."
         else:
             try:
-                with connect_db() as db:
-                    db.execute(
+                with db_conn() as db:
+                    cursor = db.execute(
                         "INSERT INTO users(username, display_name, password_hash, created_at) VALUES (?, ?, ?, ?)",
                         (username, display_name, generate_password_hash(password), int(time.time())),
                     )
+                    user_id = cursor.lastrowid
+                    audit(db, user_id, "account.created")
                 session.clear()
-                session["user_id"] = get_user_id(username)
+                session["user_id"] = user_id
+                session["amr"] = ["pwd"]
+                session["auth_time"] = int(time.time())
                 ensure_csrf()
                 session.permanent = True
-                flash("Your account was created.")
+                flash("Your account was created. Consider turning on two-step verification.")
                 return redirect(url_for("account"))
             except sqlite3.IntegrityError:
                 error = "That username may already be in use. Try another."
@@ -271,15 +148,32 @@ def login():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         valid_bot = bot_check()
-        with connect_db() as db:
-            user = db.execute("SELECT id, password_hash FROM users WHERE username = ?", (username,)).fetchone()
-        if valid_bot and user and check_password_hash(user["password_hash"], password):
+        with db_conn() as db:
+            user = db.execute(
+                "SELECT id, password_hash, mfa_enabled FROM users WHERE username = ?", (username,)
+            ).fetchone()
+            password_ok = bool(user) and check_password_hash(user["password_hash"], password)
+            if valid_bot and password_ok:
+                audit(db, user["id"], "login.password_ok")
+        if valid_bot and password_ok:
+            if user["mfa_enabled"]:
+                # Password accepted; the session is not signed in until the second factor passes.
+                next_url = safe_next(request.args.get("next"))
+                session.clear()
+                session["mfa_pending_user"] = user["id"]
+                session["mfa_next"] = next_url
+                ensure_csrf()
+                return redirect(url_for("mfa.login_mfa"))
             session.clear()
             session["user_id"] = user["id"]
+            session["amr"] = ["pwd"]
+            session["auth_time"] = int(time.time())
             ensure_csrf()
             session.permanent = True
+            with db_conn() as db:
+                audit(db, user["id"], "login.success", "password")
             flash("You are signed in.")
-            return redirect(url_for("account"))
+            return redirect(safe_next(request.args.get("next")) or url_for("account"))
         error = "Sign-in failed. Check your details and local bot check, then try again."
     return render_page("login.html", "Sign in", error=error, challenge=new_challenge())
 
@@ -288,19 +182,20 @@ def login():
 def account():
     if not current_user():
         return redirect(url_for("login"))
+    with db_conn() as db:
+        counts = db.execute(
+            """SELECT
+                 (SELECT COUNT(*) FROM connection_requests WHERE user_id = ? AND status = 'pending') AS pending,
+                 (SELECT COUNT(*) FROM connections WHERE user_id = ? AND status = 'approved') AS connected""",
+            (current_user()["id"], current_user()["id"]),
+        ).fetchone()
     return render_page(
         "account.html",
         "Account",
         profile_challenge=new_challenge(),
         password_challenge=new_challenge(),
+        counts=counts,
     )
-
-
-def require_user():
-    user = current_user()
-    if not user:
-        abort(403, "Please sign in first.")
-    return user
 
 
 @app.route("/account/profile", methods=["POST"])
@@ -314,8 +209,9 @@ def update_profile():
     elif not display_name or len(display_name) > 60:
         flash("Display name must be between 1 and 60 characters.")
     else:
-        with connect_db() as db:
+        with db_conn() as db:
             db.execute("UPDATE users SET display_name = ? WHERE id = ?", (display_name, user["id"]))
+            audit(db, user["id"], "account.profile_changed")
         flash("Display name updated.")
     return redirect(url_for("account"))
 
@@ -328,7 +224,7 @@ def change_password():
     old_password = request.form.get("old_password", "")
     new_password = request.form.get("new_password", "")
     confirm = request.form.get("confirm_password", "")
-    with connect_db() as db:
+    with db_conn() as db:
         record = db.execute("SELECT password_hash FROM users WHERE id = ?", (user["id"],)).fetchone()
     if not bot_check():
         flash("Password was not changed: local bot check failed or expired.")
@@ -339,11 +235,12 @@ def change_password():
     elif new_password != confirm:
         flash("The new passwords did not match.")
     else:
-        with connect_db() as db:
+        with db_conn() as db:
             db.execute(
                 "UPDATE users SET password_hash = ? WHERE id = ?",
                 (generate_password_hash(new_password), user["id"]),
             )
+            audit(db, user["id"], "account.password_changed")
         flash("Password updated.")
     return redirect(url_for("account"))
 
