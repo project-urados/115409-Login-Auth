@@ -1,0 +1,39 @@
+{
+  "enabled": true,
+  "brand": "Purple-ORG 115409",
+  "tagline": "Secure accounts, sign-in, and connected services.",
+  "columns": [
+    {
+      "title": "Product",
+      "links": [
+        {
+          "label": "Home",
+          "href": "/"
+        },
+        {
+          "label": "Connected services",
+          "href": "/cannot_provide"
+        },
+        {
+          "label": "Security",
+          "href": "/cannot_provide"
+        }
+      ]
+    },
+    {
+      "title": "Developers",
+      "links": [
+        {
+          "label": "OpenID discovery",
+          "href": "/.well-known/openid-configuration"
+        },
+        {
+          "label": "JWKS",
+          "href": "/.well-known/jwks.json"
+        }
+      ]
+    }
+  ],
+  "copyright": "Purple-ORG 115409",
+  "show_year": true
+}
