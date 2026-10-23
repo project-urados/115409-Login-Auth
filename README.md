@@ -1,5 +1,13 @@
 # Local Auth: accounts, MFA, OIDC/OAuth 2.0 and connected services
 
+<p align="center">
+  <img
+    src="assets/tutorial.gif"
+    alt="Demonstration of the Login Auth application"
+    width="800"
+  />
+</p>
+
 A Flask identity provider. Users sign in with a password plus a TOTP second factor
 and decide which external services may connect to their account and what data
 each one may store.
