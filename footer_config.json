@@ -29,7 +29,11 @@
         },
         {
           "label": "JWKS",
+<<<<<<< HEAD
           "href": "/cannot_provide"
+=======
+          "href": "/.well-known/jwks.json"
+>>>>>>> e5cd19f69fd55eb6b152466377ad2a6547dca9f7
         }
       ]
     }
