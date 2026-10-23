@@ -12,7 +12,9 @@ import sys
 import tempfile
 import time
 import unittest
+import urllib.request
 from pathlib import Path
+from unittest import mock
 from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -26,6 +28,7 @@ os.environ["OIDC_ISSUER"] = "http://localhost"
 import jwt  # noqa: E402
 
 import app as app_module  # noqa: E402
+import callbacks  # noqa: E402
 import mfa  # noqa: E402
 from core import connect_db, db_conn, keyed_hash, seal, unseal  # noqa: E402
 from manage import create_service as register_service  # noqa: E402
@@ -462,6 +465,172 @@ class OAuthTests(Base):
         }).get_json()["access_token"]
         resp = self.client.put("/api/v1/data/x", data="y", headers={"Authorization": f"Bearer {token}"})
         self.assertEqual(resp.status_code, 403)
+
+
+class CallbackTests(Base):
+    """Done and deny callbacks: pinged after the user decides, origin-checked, never followed."""
+
+    def setUp(self):
+        super().setUp()
+        self.svc_id, self.svc_secret = register_service(
+            "Hub", ["https://hub.example/auth/callback", "http://localhost:8123/cb"], ["profile", "data"]
+        )
+        self.user = self.register("alice")
+        self.auth = {"Authorization": basic(self.svc_id, self.svc_secret)}
+
+    def create(self, **extra):
+        body = {"username": "alice", "scopes": ["profile"], **extra}
+        return self.client.post("/api/v1/connection-requests", headers=self.auth, json=body)
+
+    def decide_first_pending(self, decision):
+        page = self.client.get("/account/connections")
+        pid = re.search(rb"/account/connections/requests/([^/]+)/" + decision.encode(), page.data).group(1).decode()
+        return self.client.post(f"/account/connections/requests/{pid}/{decision}", data={"csrf": self.csrf()})
+
+    def status(self, request_id):
+        return self.client.get(f"/api/v1/connection-requests/{request_id}", headers=self.auth).get_json()
+
+    def fake_fetch(self, status_code=200, error=None):
+        """Patch the opener so no real network call is made. Records the URLs requested."""
+        calls = []
+
+        class FakeResponse:
+            def __init__(self, code):
+                self.status = code
+
+            def read(self, n=-1):
+                return b""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        def fake_open(req, timeout=None):
+            calls.append((req.full_url, req.get_method(), timeout))
+            if error:
+                raise error
+            return FakeResponse(status_code)
+
+        return calls, mock.patch.object(callbacks._opener, "open", side_effect=fake_open)
+
+    def test_done_url_is_pinged_on_accept_with_request_id_and_status(self):
+        resp = self.create(done_url="https://hub.example/auth/callback?from=login",
+                           deny_url="https://hub.example/auth/denied")
+        self.assertEqual(resp.status_code, 202)
+        request_id = resp.get_json()["request_id"]
+        calls, patcher = self.fake_fetch()
+        with patcher:
+            self.decide_first_pending("accept")
+        self.assertEqual(len(calls), 1)
+        url, method, timeout = calls[0]
+        qs = parse_qs(urlparse(url).query)
+        self.assertEqual(method, "GET")
+        self.assertEqual(timeout, callbacks.CALLBACK_TIMEOUT)
+        self.assertEqual(qs["from"], ["login"], "existing query string must be preserved")
+        self.assertEqual(qs["request_id"], [request_id])
+        self.assertEqual(qs["status"], ["accepted"])
+        self.assertTrue(url.startswith("https://hub.example/auth/callback?"))
+
+        final = self.status(request_id)
+        self.assertEqual(final["status"], "accepted")
+        self.assertEqual(final["callback_status"], "delivered")
+        self.assertIsNotNone(final["connection_id"])
+
+    def test_deny_url_is_pinged_on_decline_and_not_done_url(self):
+        request_id = self.create(done_url="https://hub.example/auth/callback",
+                                 deny_url="https://hub.example/auth/denied").get_json()["request_id"]
+        calls, patcher = self.fake_fetch()
+        with patcher:
+            self.decide_first_pending("decline")
+        self.assertEqual(len(calls), 1)
+        url = calls[0][0]
+        self.assertTrue(url.startswith("https://hub.example/auth/denied?"))
+        self.assertEqual(parse_qs(urlparse(url).query)["status"], ["declined"])
+        final = self.status(request_id)
+        self.assertEqual(final["status"], "declined")
+        self.assertEqual(final["callback_status"], "delivered")
+        self.assertIsNone(final["connection_id"])
+
+    def test_no_callback_when_urls_are_omitted(self):
+        self.create()
+        calls, patcher = self.fake_fetch()
+        with patcher:
+            self.decide_first_pending("accept")
+        self.assertEqual(calls, [])
+
+    def test_failed_callback_does_not_block_the_decision(self):
+        request_id = self.create(done_url="https://hub.example/auth/callback").get_json()["request_id"]
+        calls, patcher = self.fake_fetch(error=OSError("connection refused"))
+        with patcher:
+            resp = self.decide_first_pending("accept")
+        self.assertEqual(resp.status_code, 302)
+        final = self.status(request_id)
+        self.assertEqual(final["status"], "accepted", "the user's decision stands even if the ping fails")
+        self.assertEqual(final["callback_status"], "failed")
+
+    def test_non_success_status_counts_as_failed(self):
+        request_id = self.create(deny_url="https://hub.example/auth/denied").get_json()["request_id"]
+        _, patcher = self.fake_fetch(status_code=500)
+        with patcher:
+            self.decide_first_pending("decline")
+        self.assertEqual(self.status(request_id)["callback_status"], "failed")
+
+    def test_callback_urls_must_match_registered_origin(self):
+        bad = [
+            "https://evil.example/steal",               # different host
+            "https://hub.example.evil.example/cb",      # look-alike host
+            "http://hub.example/cb",                    # plain http, not localhost
+            "https://user:pw@hub.example/cb",           # credentials
+            "https://hub.example:8443/cb",              # different port
+            "javascript:alert(1)",                      # wrong scheme
+            "ftp://hub.example/cb",
+            "https:///nohost",
+            "https://hub.example/cb#frag",
+        ]
+        for url in bad:
+            with self.subTest(url=url):
+                resp = self.create(done_url=url)
+                self.assertEqual(resp.status_code, 400, url)
+                self.assertEqual(resp.get_json()["error"], "invalid_request")
+
+    def test_localhost_http_and_matching_origin_are_accepted(self):
+        self.assertEqual(self.create(done_url="http://localhost:8123/anything").status_code, 202)
+        cid, secret = register_service("Other", ["https://other.example/cb"], ["profile"])
+        ok = self.client.post("/api/v1/connection-requests",
+                              headers={"Authorization": basic(cid, secret)},
+                              json={"username": "alice", "scopes": ["profile"],
+                                    "done_url": "https://other.example/cb/done"})
+        self.assertEqual(ok.status_code, 202)
+
+    def test_callback_validation_happens_before_account_lookup(self):
+        # An unknown username must not change the response: validation errors look the same for everyone.
+        resp = self.client.post("/api/v1/connection-requests", headers=self.auth,
+                                json={"username": "nobody", "scopes": ["profile"],
+                                      "done_url": "https://evil.example/x"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_repeat_request_while_pending_returns_existing_request(self):
+        # Re-asking while pending returns the existing request and does not add a second callback.
+        self.create(done_url="https://hub.example/auth/callback")
+        again = self.create(done_url="https://hub.example/auth/callback")
+        self.assertEqual(again.status_code, 202)
+        self.assertEqual(again.get_json()["status"], "pending")
+
+    def test_callbacks_are_never_followed_as_redirects(self):
+        handler = callbacks._NoRedirect()
+        req = urllib.request.Request("https://hub.example/cb")
+        self.assertIsNone(handler.redirect_request(req, None, 302, "Found", {}, "https://evil.example/"))
+
+    def test_api_description_and_discovery_advertise_callbacks(self):
+        desc = self.client.get("/api/v1").get_json()
+        fields = desc["endpoints"]["create_connection_request"]["body"]
+        self.assertIn("done_url", fields)
+        self.assertIn("deny_url", fields)
+        disc = self.client.get("/.well-known/openid-configuration").get_json()
+        self.assertEqual(disc["connection_grant_type"], app_module.oauth.CONNECTION_GRANT)
+        self.assertTrue(disc["connection_request_endpoint"].endswith("/api/v1/connection-requests"))
 
 
 def basic(client_id, secret):

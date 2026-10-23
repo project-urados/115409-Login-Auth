@@ -123,7 +123,14 @@ MIGRATIONS = {
         "mfa_secret_enc": "TEXT",
         "mfa_enabled": "INTEGER NOT NULL DEFAULT 0",
         "mfa_last_counter": "INTEGER NOT NULL DEFAULT -1",
-    }
+    },
+    "connection_requests": {
+        # Service callbacks: pinged by Local Auth when the user accepts or declines.
+        "done_url": "TEXT NOT NULL DEFAULT ''",
+        "deny_url": "TEXT NOT NULL DEFAULT ''",
+        "callback_status": "TEXT NOT NULL DEFAULT ''",  # '', 'delivered' or 'failed'
+        "callback_at": "INTEGER",
+    },
 }
 
 

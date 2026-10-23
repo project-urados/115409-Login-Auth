@@ -17,7 +17,7 @@ each one may store.
 - **Accounts** in SQLite: registration, sign-in, profile and password changes, CSRF protection, rate limits, and a local bot check.
 - **MFA**: RFC 6238 TOTP (authenticator apps), 8 single-use recovery codes, replay protection per time step, and an activity log.
 - **OpenID Connect / OAuth 2.0**: authorization code flow with **PKCE (S256) required**, RS256-signed JWT ID and access tokens, JWKS, discovery, and userinfo.
-- **Connection requests**: a registered service asks to connect to a user. The request is stored for that user until they accept or decline it.
+- **Connection requests**: a registered service asks to connect to a user. The request is stored for that user until they accept or decline it. Services can supply done and deny URLs that Local Auth pings with the outcome.
 - **Per-service data**: an approved service can store and read any content in any format (up to 1 MiB per item). A service can only touch its own data.
 - **Global footer**: configured in `footer_config.json`, applied to every page, can be disabled with one setting.
 
@@ -30,6 +30,7 @@ each one may store.
 ├── mfa.py              TOTP, recovery codes, MFA setup and sign-in step
 ├── oauth.py            OIDC discovery, JWKS, authorize, token, userinfo
 ├── connections.py      connection requests, connected-services UI, service data API
+├── callbacks.py        done and deny callbacks: URL validation and delivery
 ├── footer.py           footer loader (self-contained)
 ├── footer_config.json  edit this to change the footer everywhere
 ├── manage.py           CLI to register and manage services
@@ -77,7 +78,7 @@ The secret is printed once and stored only as a salted hash.
 
 ## How a service connects
 
-1. **Ask.** The service calls `POST /api/v1/connection-requests` with Basic auth (`client_id:secret`) and body `{"username": "...", "scopes": ["profile", "data"], "message": "..."}`. The response is identical for unknown usernames, so you can't enumerate accounts.
+1. **Ask.** The service calls `POST /api/v1/connection-requests` with Basic auth (`client_id:secret`) and body `{"username": "...", "scopes": ["profile", "data"], "message": "..."}`. The response is identical for unknown usernames, so you can't enumerate accounts. Optional `done_url` and `deny_url` fields tell Local Auth where to ping (see *Callbacks* below).
 2. **Stored.** The request appears under *Connected services* for that user. It cannot grant access until the user accepts it.
 3. **Approve.** The user clicks *Accept* or *Decline*. Accepting creates an approved connection.
 4. **Exchange.** The service polls `GET /api/v1/connection-requests/<id>` for its `connection_id`, then calls `POST /oauth/token` with `grant_type=urn:local-auth:params:oauth:grant-type:connection`, `connection_id`, and its client credentials. Only confidential clients may use this grant.
@@ -107,6 +108,31 @@ Keys may contain letters, digits, `.`, `_`, `-`, and `/`. They cannot contain `.
 - Revoking one service never touches another service's data.
 - Access tokens expire after 15 minutes. Authorization codes last 60 seconds and are single-use.
 
+### Callbacks (done and deny URLs)
+
+A service can ask Local Auth to ping it when the user decides:
+
+```json
+{
+  "username": "alice",
+  "scopes": ["profile"],
+  "done_url": "https://hub.example/auth/callback?flow=login",
+  "deny_url": "https://hub.example/auth/denied?flow=login"
+}
+```
+
+- When the user **accepts**, Local Auth sends `GET done_url` with `request_id` and `status=accepted` added to the query string.
+- When the user **declines**, Local Auth sends `GET deny_url` with `request_id` and `status=declined`.
+- Existing query parameters are kept. The ping is sent after the decision is saved, and a failed ping does not undo the decision.
+- Callbacks are **notifications only**. Confirm the outcome by polling `GET /api/v1/connection-requests/<id>` with the service credentials. That response also includes `callback_status` (`delivered`, `failed`, or `null`). Exchange the connection for a token there, not based on the ping.
+- Callback URLs must be `https://` (or `http://localhost`), must have **the same origin as one of the service's registered redirect URIs**, must not contain credentials or a fragment, and redirects are never followed. The timeout is 5 seconds.
+
+Any service that follows this API can use it. A service does not need to be listed in Local Auth. It only needs to be registered (`manage.py add-service`) to get credentials.
+
+### Discovery
+
+`GET /api/v1` returns a machine-readable description of the connection API, including endpoints, request fields, and callback rules. `/.well-known/openid-configuration` also lists `connection_api`, `connection_request_endpoint`, and `connection_grant_type`.
+
 ## Footer
 
 Edit `footer_config.json`:
@@ -132,4 +158,4 @@ The footer loads once per process, so restart the app after editing.
 python -m unittest discover -s tests -v
 ```
 
-The suite covers the footer, MFA enrolment and login (including TOTP replay and single-use recovery codes), PKCE and redirect validation, scope limits, the connection-request lifecycle, data isolation between services, scope enforcement on the data API, and revocation.
+The suite covers the footer, done and deny callbacks (origin checks, delivery failures), MFA enrolment and login (including TOTP replay and single-use recovery codes), PKCE and redirect validation, scope limits, the connection-request lifecycle, data isolation between services, scope enforcement on the data API, and revocation.
