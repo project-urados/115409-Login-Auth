@@ -45,9 +45,10 @@ each one may store.
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-export FLASK_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
 python app.py --host <ip> --port <port>
 ```
+
+Make sure to rotate the built-in FLASK_SECRET_KEY in app.py!
 
 Open <http://127.0.0.1:5000>. Environment variables:
 
