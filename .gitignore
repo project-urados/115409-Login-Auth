@@ -6,3 +6,7 @@ __pycache__/
 gunicorn.*
 *.zip
 *.tar*
+.flask_secret_key
+auth.sqlite3
+auth.sqlite3-wal
+auth.sqlite3-shm

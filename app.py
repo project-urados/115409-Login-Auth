@@ -28,7 +28,7 @@ from core import (
 from footer import init_footer
 
 app = Flask(__name__)
-secret_key = "e07b9dd63e588afe935e6ea3444bbf88b5fe60aa23f1dcd5234028f3744ca7a7"
+secret_key = os.environ.get("FLASK_SECRET_KEY", "")
 if not secret_key:
     raise RuntimeError(
         "Set FLASK_SECRET_KEY before starting the app. Generate one with: "
