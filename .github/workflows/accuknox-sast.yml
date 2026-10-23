@@ -1,0 +1,41 @@
+
+name: AccuKnox SAST
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sast:
+    name: Static Application Security Testing
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run AccuKnox SAST
+        uses: accuknox/accuknox-code-analysis@latest
+        with:
+          scan_type: "sast"
+
+          accuknox_token: ${{ secrets.ACCUKNOX_TOKEN }}
+          accuknox_endpoint: ${{ secrets.ACCUKNOX_ENDPOINT }}
+          accuknox_label: ${{ secrets.ACCUKNOX_LABEL }}
+
+          sast_severity: "HIGH,CRITICAL"
+
+          # Initially, report findings without
+          # failing the entire workflow.
+          soft_fail: true
+
+          upload_artifact: true
