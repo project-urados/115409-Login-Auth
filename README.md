@@ -37,7 +37,7 @@ each one may store.
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 export FLASK_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
-python app.py
+python app.py --host <ip> --port <port>
 ```
 
 Open <http://127.0.0.1:5000>. Environment variables:
@@ -69,8 +69,8 @@ The secret is printed once and stored only as a salted hash.
 
 ## How a service connects
 
-1. **Ask.** The service calls `POST /api/v1/connection-requests` with Basic auth (`client_id:secret`) and body `{"username": "...", "scopes": ["profile", "data"], "message": "..."}`. The response is identical for unknown usernames, so accounts cannot be enumerated.
-2. **Stored.** The request appears under *Connected services* for that user. It cannot grant access until accepted.
+1. **Ask.** The service calls `POST /api/v1/connection-requests` with Basic auth (`client_id:secret`) and body `{"username": "...", "scopes": ["profile", "data"], "message": "..."}`. The response is identical for unknown usernames, so you can't enumerate accounts.
+2. **Stored.** The request appears under *Connected services* for that user. It cannot grant access until the user accepts it.
 3. **Approve.** The user clicks *Accept* or *Decline*. Accepting creates an approved connection.
 4. **Exchange.** The service polls `GET /api/v1/connection-requests/<id>` for its `connection_id`, then calls `POST /oauth/token` with `grant_type=urn:local-auth:params:oauth:grant-type:connection`, `connection_id`, and its client credentials. Only confidential clients may use this grant.
 5. **Use.** The service calls the data API with `Authorization: Bearer <token>`.
