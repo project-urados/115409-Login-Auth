@@ -51,7 +51,10 @@ chmod 600 .flask_secret_key
 
 export FLASK_SECRET_KEY="$(cat .flask_secret_key)"
 python3 app.py
+<<<<<<< HEAD
 >
+=======
+>>>>>>> 727e5b7932f4389082c2682740401c417eddbf32
 ```
 
 Open <http://127.0.0.1:5000>. Environment variables:
