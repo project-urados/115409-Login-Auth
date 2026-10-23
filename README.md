@@ -45,10 +45,9 @@ each one may store.
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
+export FLASK_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
 python app.py --host <ip> --port <port>
 ```
-
-Make sure to rotate the built-in FLASK_SECRET_KEY in app.py!
 
 Open <http://127.0.0.1:5000>. Environment variables:
 
@@ -160,3 +159,27 @@ python -m unittest discover -s tests -v
 ```
 
 The suite covers the footer, done and deny callbacks (origin checks, delivery failures), MFA enrolment and login (including TOTP replay and single-use recovery codes), PKCE and redirect validation, scope limits, the connection-request lifecycle, data isolation between services, scope enforcement on the data API, and revocation.
+
+## Localhost connection test client
+
+`connection_test.py` is an external client that exercises the real HTTP connection flow without opening the Local Auth database. Run Local Auth first, then register a local confidential service with the `data` scope:
+
+```bash
+python app.py --host 127.0.0.1 --port 5000
+
+# In a second terminal, from the same directory:
+python manage.py add-service \
+  --name "Localhost Connection Test" \
+  --redirect http://localhost:5050/callback \
+  --scopes data
+```
+
+Save the printed `client_id` and `client_secret`. Then run the test client in a third terminal:
+
+```bash
+LOCAL_AUTH_CLIENT_ID="..." \
+LOCAL_AUTH_CLIENT_SECRET="..." \
+python connection_test.py --username alice
+```
+
+The client creates a connection request, waits while the target user accepts it at `/account/connections`, exchanges the approved connection for a token, writes one item through `/api/v1/data`, and reads it back to verify the result. Use `--request-only` to create the request and exit, or `--base-url http://127.0.0.1:5000` to select another Local Auth address. The test client uses no callback; the registered localhost redirect is only required by the service-registration CLI.
