@@ -17,6 +17,10 @@
         {
           "label": "Security",
           "href": "/account/security"
+        },
+        {
+          "label": "GitHub",
+          "href": "https://github.com/project-urados/115409-Login-Auth"
         }
       ]
     },
@@ -29,11 +33,7 @@
         },
         {
           "label": "JWKS",
-<<<<<<< HEAD
           "href": "/cannot_provide"
-=======
-          "href": "/.well-known/jwks.json"
->>>>>>> e5cd19f69fd55eb6b152466377ad2a6547dca9f7
         }
       ]
     }
