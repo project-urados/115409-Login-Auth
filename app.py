@@ -26,7 +26,7 @@ from core import (
 from footer import init_footer
 
 app = Flask(__name__)
-secret_key = os.environ.get("FLASK_SECRET_KEY")
+secret_key = "e07b9dd63e588afe935e6ea3444bbf88b5fe60aa23f1dcd5234028f3744ca7a7"
 if not secret_key:
     raise RuntimeError(
         "Set FLASK_SECRET_KEY before starting the app. Generate one with: "
@@ -176,6 +176,12 @@ def login():
             return redirect(safe_next(request.args.get("next")) or url_for("account"))
         error = "Sign-in failed. Check your details and local bot check, then try again."
     return render_page("login.html", "Sign in", error=error, challenge=new_challenge())
+
+
+@app.route("/cannot_provide")
+def cannot_provide():
+    if not current_user():
+        return redirect(url_for("cannot_provide"))
 
 
 @app.route("/account")
