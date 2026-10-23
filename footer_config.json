@@ -12,11 +12,11 @@
         },
         {
           "label": "Connected services",
-          "href": "/cannot_provide"
+          "href": "/account/connections"
         },
         {
           "label": "Security",
-          "href": "/cannot_provide"
+          "href": "/account/security"
         }
       ]
     },
@@ -25,12 +25,11 @@
       "links": [
         {
           "label": "OpenID discovery",
-          "href": "/.well-known/openid-configuration"
+          "href": "/cannot_provide"
         },
         {
           "label": "JWKS",
-          "href": "/.well-known/j
-wks.json"
+          "href": "/cannot_provide"
         }
       ]
     }
