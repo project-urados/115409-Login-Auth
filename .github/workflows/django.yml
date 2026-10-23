@@ -34,4 +34,5 @@ jobs:
 
       - name: Run tests
         run: |
+          python footer.py
           python tests/test_app.py
