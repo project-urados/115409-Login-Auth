@@ -24,6 +24,7 @@ from werkzeug.security import check_password_hash
 
 from flask import flash, redirect
 
+from callbacks import STATUS_ACCEPTED, STATUS_DECLINED, deliver_callback, validate_callback_url
 from core import audit, check_csrf, db_conn, enforce_rate_limit, render_page, require_user
 from oauth import (
     SCOPE_DESCRIPTIONS,
@@ -107,6 +108,10 @@ def decide_request(public_id, decision):
             audit(db, user["id"], "connection.accepted", req["client_id"])
         else:
             audit(db, user["id"], "connection.declined", req["client_id"])
+        callback_url = req["done_url"] if decision == "accept" else req["deny_url"]
+    # Ping the service only after the decision is committed.
+    if callback_url:
+        deliver_callback(public_id, callback_url, STATUS_ACCEPTED if decision == "accept" else STATUS_DECLINED)
     return redirect_to_connections("Connection accepted." if decision == "accept" else "Request declined.")
 
 
@@ -146,6 +151,61 @@ def authenticate_service():
     return client
 
 
+@bp.route("/api/v1", methods=["GET"])
+def api_description():
+    """Public, machine-readable description of the Local Auth connection API.
+
+    Lets any service discover the endpoints, the request fields (including the
+    done and deny callbacks), and the grant it uses after approval.
+    """
+    base = request.url_root.rstrip("/")
+    return jsonify({
+        "name": "Local Auth connection API",
+        "version": "1",
+        "endpoints": {
+            "create_connection_request": {
+                "method": "POST",
+                "url": f"{base}/api/v1/connection-requests",
+                "auth": "HTTP Basic with the service client_id and client_secret",
+                "body": {
+                    "username": "string, required: the Local Auth username to ask",
+                    "scopes": "array of strings, required: subset of the service's registered scopes",
+                    "message": "string, optional: shown to the user (max 500 characters)",
+                    "done_url": "string, optional: https URL pinged with ?request_id=...&status=accepted when the user accepts",
+                    "deny_url": "string, optional: https URL pinged with ?request_id=...&status=declined when the user declines",
+                },
+                "responses": {"202": "{status, request_id}; identical for unknown usernames"},
+            },
+            "get_connection_request": {
+                "method": "GET",
+                "url": f"{base}/api/v1/connection-requests/{{request_id}}",
+                "auth": "HTTP Basic with the service client_id and client_secret",
+                "responses": {"200": "{status: pending|accepted|declined, connection_id, callback_status}"},
+            },
+            "exchange_connection": {
+                "method": "POST",
+                "url": f"{base}/oauth/token",
+                "body": {
+                    "grant_type": "urn:local-auth:params:oauth:grant-type:connection",
+                    "connection_id": "from the accepted request",
+                    "client_id": "service client_id (confidential clients only)",
+                    "client_secret": "service client_secret",
+                },
+            },
+        },
+        "callbacks": {
+            "note": "Callbacks are notifications only. Confirm the outcome with get_connection_request.",
+            "method": "GET",
+            "params": ["request_id", "status"],
+            "rules": [
+                "https only, except http://localhost",
+                "must share an origin with one of the service's registered redirect URIs",
+                "redirects are not followed; 5 second timeout",
+            ],
+        },
+    })
+
+
 @bp.route("/api/v1/connection-requests", methods=["POST"])
 def create_connection_request():
     """A service asks to connect to a specific user account.
@@ -165,6 +225,16 @@ def create_connection_request():
     allowed = set(parse_scopes(client["allowed_scopes"]))
     if not set(requested) <= allowed:
         return jsonify(error="invalid_scope", error_description="Requested scopes exceed the registration."), 400
+    # Callback URLs are checked against the service's own registration, before any
+    # account lookup, so these errors reveal nothing about whether a user exists.
+    done_url = str(body.get("done_url") or "").strip()
+    deny_url = str(body.get("deny_url") or "").strip()
+    redirect_uris = client["redirect_uris"].split()
+    for field, url in (("done_url", done_url), ("deny_url", deny_url)):
+        if url:
+            problem = validate_callback_url(url, redirect_uris)
+            if problem:
+                return jsonify(error="invalid_request", error_description=f"{field}: {problem}"), 400
     with db_conn() as db:
         user = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
         # Respond identically whether or not the user exists, to avoid account enumeration.
@@ -178,9 +248,11 @@ def create_connection_request():
             return jsonify(status="pending", request_id=pending["public_id"]), 202
         public_id = secrets.token_urlsafe(18)
         db.execute(
-            """INSERT INTO connection_requests(public_id, user_id, client_id, scopes, message, status, created_at)
-               VALUES (?, ?, ?, ?, ?, 'pending', ?)""",
-            (public_id, user["id"], client["client_id"], " ".join(requested), message, int(time.time())),
+            """INSERT INTO connection_requests(public_id, user_id, client_id, scopes, message, status, created_at,
+                                               done_url, deny_url)
+               VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)""",
+            (public_id, user["id"], client["client_id"], " ".join(requested), message, int(time.time()),
+             done_url, deny_url),
         )
         audit(db, user["id"], "connection.requested", client["client_id"])
     return jsonify(status="pending", request_id=public_id), 202
@@ -192,7 +264,7 @@ def get_connection_request(public_id):
     client = authenticate_service()
     with db_conn() as db:
         row = db.execute(
-            "SELECT status, scopes FROM connection_requests WHERE public_id = ? AND client_id = ?",
+            "SELECT status, scopes, callback_status FROM connection_requests WHERE public_id = ? AND client_id = ?",
             (public_id, client["client_id"]),
         ).fetchone()
         if row is None:
@@ -209,7 +281,11 @@ def get_connection_request(public_id):
                 "SELECT public_id FROM connections WHERE user_id = ? AND client_id = ? AND status = 'approved'",
                 (request_row["user_id"], client["client_id"]),
             ).fetchone()
-    return jsonify(status=row["status"], connection_id=connection["public_id"] if connection else None)
+    return jsonify(
+        status=row["status"],
+        connection_id=connection["public_id"] if connection else None,
+        callback_status=row["callback_status"] or None,
+    )
 
 
 # ---------------------------------------------------------------- service data
