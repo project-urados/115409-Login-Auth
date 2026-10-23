@@ -44,7 +44,7 @@ Open <http://127.0.0.1:5000>. Environment variables:
 
 | Variable | Purpose |
 | --- | --- |
-| `FLASK_SECRET_KEY` | Required. Also seeds the key that seals secrets at rest. Changing it invalidates sessions, MFA secrets and signing keys. |
+| `FLASK_SECRET_KEY` | Required. Also seeds the key that seals secrets at rest. Changing it invalidates sessions, MFA secrets, and signing keys. |
 | `AUTH_DB` | SQLite path (default `auth.sqlite3`). |
 | `OIDC_ISSUER` | Public issuer URL, e.g. `https://id.example.com`. Defaults to the request host. Set it in production. |
 | `HTTPS_ONLY` | `1` to set Secure cookies and HSTS. Use this in production. |
@@ -115,7 +115,7 @@ The footer loads once per process, so restart the app after editing.
 - Tokens are signed with RS256. The verifier pins the algorithm, so `alg: none` and HS/RS confusion are rejected.
 - The CSP forbids inline scripts and styles. Templates have no inline `style` attributes or scripts.
 - The local bot check and honeypot are friction only, not a real CAPTCHA.
-- This is a single-instance design. The SQLite rate limiter and key cache are per process. For production, use a WSGI server (for example gunicorn with one worker, or a shared database), HTTPS, `HTTPS_ONLY=1`, and a managed secret.
+- This is a single-instance design. The SQLite rate limiter and key cache are per process. For production, use a WSGI server (for example, gunicorn with one worker, or a shared database), HTTPS, `HTTPS_ONLY=1`, and a managed secret.
 - Not included yet: email verification, password reset, account deletion, and admin tooling. Account deletion is the main gap, since it's needed to meet data-erasure requirements.
 
 ## Tests
