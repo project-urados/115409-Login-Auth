@@ -23,19 +23,6 @@
           "href": "https://github.com/project-urados/115409-Login-Auth"
         }
       ]
-    },
-    {
-      "title": "Developers",
-      "links": [
-        {
-          "label": "OpenID discovery",
-          "href": "/cannot_provide"
-        },
-        {
-          "label": "JWKS",
-          "href": "/cannot_provide"
-        }
-      ]
     }
   ],
   "copyright": "Purple-ORG 115409",
