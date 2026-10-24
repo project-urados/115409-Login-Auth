@@ -1,7 +1,5 @@
-import argparse
 import os
 import sqlite3
-import sys
 import time
 
 from flask import Flask, flash, jsonify, redirect, request, session, url_for
@@ -28,7 +26,7 @@ from core import (
 from footer import init_footer
 
 app = Flask(__name__)
-secret_key = os.environ.get("FLASK_SECRET_KEY", "")
+secret_key = os.environ.get("FLASK_SECRET_KEY")
 if not secret_key:
     raise RuntimeError(
         "Set FLASK_SECRET_KEY before starting the app. Generate one with: "
@@ -180,12 +178,6 @@ def login():
     return render_page("login.html", "Sign in", error=error, challenge=new_challenge())
 
 
-@app.route("/cannot_provide")
-def cannot_provide():
-    if not current_user():
-        return redirect(url_for("cannot_provide"))
-
-
 @app.route("/account")
 def account():
     if not current_user():
@@ -261,60 +253,6 @@ def logout():
     return redirect(url_for("home"))
 
 
-class GunicornApplication:
-    """Run the Flask application through Gunicorn when app.py is executed."""
-
-    def __init__(self, application, options=None):
-        from gunicorn.app.base import BaseApplication
-
-        class Application(BaseApplication):
-            def load_config(self):
-                for key, value in (options or {}).items():
-                    if value is not None:
-                        self.cfg.set(key.lower(), value)
-
-            def load(self):
-                return application
-
-        self.application = Application()
-
-    def run(self):
-        self.application.run()
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Run the application with Gunicorn.")
-    parser.add_argument(
-        "--host",
-        "--ip",
-        dest="host",
-        default=os.environ.get("HOST", "127.0.0.1"),
-        help="IP address to bind to (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=int(os.environ.get("PORT", "5000")),
-        help="TCP port to bind to (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=int(os.environ.get("WEB_CONCURRENCY", "1")),
-        help="Number of Gunicorn worker processes (default: %(default)s)",
-    )
-    args = parser.parse_args()
-
-    GunicornApplication(
-        app,
-        {
-            "bind": f"{args.host}:{args.port}",
-            "workers": args.workers,
-            "accesslog": "-",
-            "errorlog": "-",
-        },
-    ).run()
-
-
 if __name__ == "__main__":
-    main()
+    # Local-only development binding. Use a production WSGI server and HTTPS for public use.
+    app.run(host="127.0.0.1", port=int(os.environ.get("PORT", "5000")), debug=False)

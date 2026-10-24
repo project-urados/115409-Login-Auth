@@ -17,14 +17,23 @@
         {
           "label": "Security",
           "href": "/account/security"
+        }
+      ]
+    },
+    {
+      "title": "Developers",
+      "links": [
+        {
+          "label": "OpenID discovery",
+          "href": "/.well-known/openid-configuration"
         },
         {
-          "label": "GitHub",
-          "href": "https://github.com/project-urados/115409-Login-Auth"
+          "label": "JWKS",
+          "href": "/.well-known/jwks.json"
         }
       ]
     }
   ],
-  "copyright": "Purple-ORG 115409",
+  "copyright": "Local Auth",
   "show_year": true
 }

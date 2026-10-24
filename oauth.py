@@ -276,10 +276,6 @@ def discovery():
         "code_challenge_methods_supported": ["S256"],
         "claims_supported": ["sub", "name", "preferred_username", "auth_time", "amr", "nonce"],
         "authorization_response_iss_parameter_supported": True,
-        # Local Auth connection API (see /api/v1 for the full description).
-        "connection_api": base + "/api/v1",
-        "connection_request_endpoint": base + "/api/v1/connection-requests",
-        "connection_grant_type": CONNECTION_GRANT,
     })
 
 
