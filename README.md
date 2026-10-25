@@ -36,7 +36,9 @@ each one may store.
 ```bash
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-export FLASK_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+echo '$(python -c 'import secrets; print(secrets.token_hex(32))')' > .flask_secret_key
+chmod 600 .flask_secret_key
+export FLASK_SECRET_KEY="$(cat .flask_secret_key)"
 python app.py
 ```
 
